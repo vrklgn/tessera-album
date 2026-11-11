@@ -3,7 +3,7 @@
 # chosen for the tile, and a key that shows its tracks. The list is built into the screen (tools/build_albums.py); only
 # the covers come from the internet. docs/MANIFEST.md of the Tessera plugins repository has every field.
 id: album_of_the_day
-version: 0.4.1
+version: 0.5.0
 api: "0.15"
 icon: album
 maintainer: vrklgn
@@ -34,7 +34,8 @@ tiles:
     # A large tile is a deck: up to forty tracks of two labels each, five keys and blocks, the words and a picture's
     # place, and the tile's own numbers and names.
     memory: 10000
-    pictures: 1
+    # A deck has two places, one for each of its faces; only the one in sight asks for the cover.
+    pictures: 2
     # The speaker that plays the album: a Music Assistant player (only those carry `mass_player_type`). What it plays
     # now says whether the album of the day is on.
     domains: [media_player]

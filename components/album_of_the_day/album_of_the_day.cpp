@@ -181,6 +181,12 @@ static lv_obj_t *plain_block(lv_obj_t *parent, theme::Role fill) {
   return o;
 }
 
+static void set_hidden(lv_obj_t *o, bool off) {
+  if (!o) return;
+  if (off) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+  else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+
 // A round key: an icon of Tessera's set on a circle.
 static lv_obj_t *round_block(lv_obj_t *parent, uint32_t icon, int x, int y, int size, theme::Role fill, theme::Role ink) {
   lv_obj_t *key = plain_block(parent, fill);
@@ -241,6 +247,17 @@ struct Art {
     ui::set_text(number, rank);
     lv_obj_set_pos(number, 0, (side - ui::line_height(face)) / 2);
   }
+  // Out of sight, and back: a place out of sight asks for no picture.
+  void hide(bool off) const {
+    lv_obj_t *o = place ? place : block;
+    if (!o) return;
+    if (off) {
+      if (place) ui::set_picture(place, "", tessera::Fit::COVER);
+      lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   void paint() const {
     if (!block) return;
     ui::set_fill(block, tessera::Tone::NORMAL, theme::TRACK);
@@ -254,10 +271,12 @@ struct Art {
 // entity is the Music Assistant player that plays it. Its `background` option takes the card behind it away, or tints
 // it in one of the four colours of the Tessera mark.
 //
-// A large tile is a deck, with everything on the page itself: the cover and the words in a band at the top, with keys
-// that play and pause the album and turn the volume; a bar that says how far into the album the player is; and under
-// it every track with its length, the one that plays standing out. A tap on a key works it, a tap anywhere else opens
-// the card. No key skips a track.
+// A large tile is a deck, with everything on the page itself, in two faces. Until the album plays it is a poster: the
+// cover large, its title, its artist and place, the sentence about it, and a key that plays it. That key turns the
+// deck to its other face, which it keeps while the album is on the player: the cover and the words in a band at the
+// top, with keys that pause the album and turn the volume; a bar that says how far into the album the player is; and
+// under it every track with its length, the one that plays standing out. A tap on a key works it, a tap anywhere else
+// opens the card. No key skips a track.
 class AlbumTile : public tessera::Tile {
  public:
   explicit AlbumTile(AlbumOfTheDay *plugin) : plugin_(plugin) {}
@@ -333,6 +352,11 @@ class AlbumTile : public tessera::Tile {
       failed_ = false;
       if (shown_) show();
     }
+    // A player that did not start the album within a while: the deck is a poster again.
+    if (started_ && esphome::millis() - started_at_ > 20000) {
+      started_ = false;
+      if (shown_) show();
+    }
     const int now = album_of(epoch, mixed_);
     if (now == at_ && shown_) return;
     at_ = now;
@@ -362,6 +386,14 @@ class AlbumTile : public tessera::Tile {
         ui::set_color(names_[i], theme::INK);
         ui::set_color(times_[i], theme::MUTED);
       }
+      poster_art_.paint();
+      ui::set_color(poster_title_, theme::INK);
+      ui::set_color(poster_meta_, theme::MUTED);
+      if (poster_tag_) ui::set_color(poster_tag_, theme::MUTED);
+      if (poster_key_) {
+        ui::set_color(poster_key_icon_, theme::ON_ACCENT);
+        ui::set_color(poster_key_text_, theme::ON_ACCENT);
+      }
     }
     if (shown_) show();
   }
@@ -370,13 +402,31 @@ class AlbumTile : public tessera::Tile {
   // card is made after this and reads it from the plugin.
   void on_tap() override {
     if (at_ < 0) return;
-    if (deck_ && !player_.empty()) {
+    if (deck_ && !tracks_face_ && !player_.empty()) {
+      // The poster's key plays the album and turns the deck to its tracks.
+      const tessera::Point p = tessera::tap_point();
+      const int slack = ui::px(8);
+      if (p.x >= key_x_ - slack && p.x <= key_x_ + key_w_ + slack && p.y >= key_y_ - slack && p.y <= key_y_ + key_h_ + slack) {
+        if (start_album(ALBUMS[at_], plain(player_), also_)) {
+          started_ = true;
+          started_at_ = esphome::millis();
+        } else {
+          failed_ = true;
+          failed_at_ = esphome::millis();
+        }
+        show();
+        return;
+      }
+    } else if (deck_ && !player_.empty()) {
       const tessera::Point p = tessera::tap_point();
       const std::string player = plain(player_);
       if (on_key(play_, p, round_)) {
         if (on_ && (state_ == "playing" || state_ == "paused")) {
           tessera::action(PAUSE, player);
-        } else if (!start_album(ALBUMS[at_], player, also_)) {
+        } else if (start_album(ALBUMS[at_], player, also_)) {
+          started_ = true;
+          started_at_ = esphome::millis();
+        } else {
           failed_ = true;
           failed_at_ = esphome::millis();
         }
@@ -508,6 +558,98 @@ class AlbumTile : public tessera::Tile {
       times_[i] = ui::label(parent, Font::BODY, theme::MUTED);
       lv_obj_set_style_text_align(times_[i], LV_TEXT_ALIGN_RIGHT, 0);
     }
+    make_poster(parent, square);
+  }
+
+  // The deck's first face: the cover as large as the words under it allow, the title, the artist and the album's
+  // place, the sentence about it (three lines, fewer where the cover would get small), and the key that plays it.
+  void make_poster(lv_obj_t *parent, bool square) {
+    const int hl = ui::line_height(Font::HEADLINE), bh = ui::line_height(Font::BODY), bl = ui::line_height(Font::BODY_LARGE);
+    const int gap = ui::px(10);
+    key_h_ = std::max(ui::mm(9), bl + ui::px(18));
+    const int foot = player_.empty() ? 0 : gap + key_h_;
+    int lines = 3;
+    auto words = [&]() { return gap + hl + ui::px(2) + bh + (lines ? ui::px(6) + lines * bh : 0) + foot; };
+    while (lines > 0 && height_ - words() < std::min(width_, height_ * 45 / 100)) --lines;
+    const int side = std::max(1, std::min(width_, height_ - words()));
+    poster_art_.make(parent, (width_ - side) / 2, 0, side, square);
+    int y = side + gap;
+    poster_title_ = ui::label(parent, Font::HEADLINE, theme::INK);
+    lv_obj_set_width(poster_title_, width_);
+    lv_obj_set_style_text_align(poster_title_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(poster_title_, 0, y);
+    y += hl + ui::px(2);
+    poster_meta_ = ui::label(parent, Font::BODY, theme::MUTED);
+    lv_obj_set_width(poster_meta_, width_);
+    lv_obj_set_style_text_align(poster_meta_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(poster_meta_, 0, y);
+    y += bh;
+    if (lines) {
+      y += ui::px(6);
+      poster_tag_ = ui::text(parent, Font::BODY, theme::MUTED);
+      lv_obj_set_size(poster_tag_, width_, lines * bh);
+      lv_obj_set_style_text_align(poster_tag_, LV_TEXT_ALIGN_CENTER, 0);
+      lv_obj_set_pos(poster_tag_, 0, y);
+    }
+    if (!player_.empty()) {
+      key_y_ = height_ - key_h_;
+      poster_key_ = plain_block(parent, theme::ACCENT);
+      lv_obj_set_style_radius(poster_key_, key_h_ / 2, 0);
+      poster_key_icon_ = ui::label(poster_key_, Font::ICON_SMALL, theme::ON_ACCENT);
+      ui::set_text(poster_key_icon_, ui::icon(ICON_PLAY));
+      poster_key_text_ = ui::label(poster_key_, Font::BODY_LARGE, theme::ON_ACCENT);
+    }
+  }
+
+  // One face of the deck in sight, the other out of it.
+  void face(bool tracks) {
+    tracks_face_ = tracks;
+    for (lv_obj_t *o : {place_, title_, artist_, play_, quieter_, louder_, volume_, bar_, head_}) set_hidden(o, !tracks);
+    art_.hide(!tracks);
+    if (!tracks) {
+      set_hidden(bar_fill_, true);
+      for (int i = 0; i < slots_; ++i) {
+        set_hidden(names_[i], true);
+        set_hidden(times_[i], true);
+      }
+    }
+    for (lv_obj_t *o : {poster_title_, poster_meta_, poster_tag_, poster_key_}) set_hidden(o, tracks);
+    poster_art_.hide(tracks);
+  }
+
+  void show_poster(const Album *a) {
+    poster_art_.show(a);
+    // The title in the large face where it fits the width, else the smaller one.
+    const Font title = a && ui::text_width(a->title, Font::HEADLINE) > width_ ? Font::TITLE : Font::HEADLINE;
+    ui::set_font(poster_title_, title);
+    ui::set_text(poster_title_, a ? a->title : "");
+    std::string meta = a ? a->artist : "";
+    if (a) {
+      const std::string both = meta + (ui::covers(" · ", Font::BODY) ? " · " : ", ") + place_line(plugin_, *a, width_, Font::BODY, true);
+      if (ui::text_width(both, Font::BODY) <= width_) meta = both;
+    }
+    ui::set_text(poster_meta_, meta);
+    if (poster_tag_) ui::set_text(poster_tag_, a ? a->tagline : "");
+    if (!poster_key_) return;
+    // The key in the middle of the foot: "Play on Living room" when that fits, else "Play".
+    const int icon_w = ui::line_height(Font::ICON_SMALL), space = ui::px(8), inner = ui::px(22);
+    std::string words = plugin_->text(failed_ ? "retry" : "play");
+    const std::string name = plain(plugin_->player_name);
+    if (!name.empty() && !failed_) {
+      const std::string on = tessera::fill(plugin_->text("play_on"), "player", name);
+      if (inner + icon_w + space + ui::text_width(on, Font::BODY_LARGE) + inner <= width_) words = on;
+    }
+    const int tw = std::max(1, std::min(ui::text_width(words, Font::BODY_LARGE) + 1, width_ - 2 * inner - icon_w - space));
+    key_w_ = inner + icon_w + space + tw + inner;
+    key_x_ = (width_ - key_w_) / 2;
+    lv_obj_set_size(poster_key_, key_w_, key_h_);
+    lv_obj_set_pos(poster_key_, key_x_, key_y_);
+    lv_obj_set_pos(poster_key_icon_, inner, (key_h_ - ui::line_height(Font::ICON_SMALL)) / 2);
+    lv_obj_set_width(poster_key_text_, tw);
+    lv_obj_set_pos(poster_key_text_, inner + icon_w + space, (key_h_ - ui::line_height(Font::BODY_LARGE)) / 2);
+    ui::set_text(poster_key_text_, words);
+    ui::set_fill(poster_key_, failed_ ? tessera::Tone::BUSY : tessera::Tone::NORMAL, theme::ACCENT);
+    set_hidden(poster_key_, a == nullptr);
   }
 
   void show_deck(const Album *a) {
@@ -582,7 +724,15 @@ class AlbumTile : public tessera::Tile {
 
   void show() {
     const Album *a = at_ >= 0 ? &ALBUMS[at_] : nullptr;
-    if (deck_) return show_deck(a);
+    if (deck_) {
+      // The tracks while the album is on the player, and from the tap on Play until the player says so.
+      const bool on = a && on_player(*a, plain(album_), plain(playing_artist_)) && (state_ == "playing" || state_ == "paused");
+      if (on) started_ = false;
+      face(a && (on || started_));
+      if (tracks_face_) show_deck(a);
+      else show_poster(a);
+      return;
+    }
     art_.show(a);
     if (!title_) return;
     ui::set_text(title_, a ? a->title : "");
@@ -627,7 +777,12 @@ class AlbumTile : public tessera::Tile {
   lv_obj_t *parent_{}, *place_{}, *title_{}, *artist_{}, *tagline_{};
   // The deck: the longest album of the list has forty tracks, so forty places hold any of them.
   static constexpr int MAX_SLOTS = 40, MAX_ROWS = 24;
-  bool deck_ = false, on_ = false, failed_ = false;
+  bool deck_ = false, on_ = false, failed_ = false, tracks_face_ = false, started_ = false;
+  // The poster, the deck's first face.
+  Art poster_art_;
+  int key_x_ = 0, key_y_ = 0, key_w_ = 0, key_h_ = 0;
+  uint32_t started_at_ = 0;
+  lv_obj_t *poster_title_{}, *poster_meta_{}, *poster_tag_{}, *poster_key_{}, *poster_key_icon_{}, *poster_key_text_{};
   int side_ = 0, round_ = 0, keys_y_ = 0, bar_y_ = 0, list_y_ = 0, row_h_ = 0, rows_ = 0, columns_ = 1, slots_ = 0;
   float level_ = -1.0f;
   uint32_t failed_at_ = 0;

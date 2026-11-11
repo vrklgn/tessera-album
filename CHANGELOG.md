@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+- A large tile starts as a poster: the cover large, the title, the artist, the sentence about the album and a Play
+  key. Play turns it to the tracks, with the keys and the bar, for as long as the album is on the player.
+
 ## 0.4.1
 - The tile goes up to five by five cells.
 

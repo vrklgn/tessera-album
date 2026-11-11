@@ -19,10 +19,12 @@ This plugin is not made by or with Apple. The list and the sentences about the a
    `https://github.com/vrklgn/tessera-album`. Add the plugin to a screen; the screen builds once.
 2. In Layout, place the **Album of the day** tile from the library's Plugins group. One cell shows the cover alone; a
    wide tile shows the cover beside the words; a tall tile shows the cover over the title and artist. A large tile
-   (about three by three cells and up, to five by five) is a deck: the cover and the words at the top with keys that
-   play, pause and turn the volume, a bar that says how far into the album you are, and under it every track with its
-   length and the album's whole length, the track that plays standing out. A tap on a key works it; a tap anywhere
-   else opens the album's card.
+   (about three by three cells and up, to five by five) is a deck with two faces. First a poster: the cover large, the
+   title, the artist, the sentence about the album and a **Play** key. Play turns it to the tracks: the cover and the
+   words at the top with keys that pause and turn the volume, a bar that says how far into the album you are, and
+   under it every track with its length and the album's whole length, the track that plays standing out. It stays so
+   while the album is on the player, playing or paused, and is a poster again when the player goes on to something
+   else. A tap on a key works it; a tap anywhere else opens the album's card.
 3. To play from the screen, choose the tile's player in the inspector: it offers the players of
    [Music Assistant](https://www.music-assistant.io) in Home Assistant. A Music Assistant group plays on all its
    speakers.
