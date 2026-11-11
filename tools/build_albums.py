@@ -102,7 +102,8 @@ def tracks_of(found):
     if isinstance(found, dict):
         tracks = found.get("tracks")
         if isinstance(tracks, list) and tracks and isinstance(tracks[0], dict) and "name" in tracks[0]:
-            return [track(t["name"]) for t in tracks if t.get("name")]
+            # A line for each: its name, a tab, its length in seconds (0 when the page does not say).
+            return [f'{track(t["name"])}\t{round((t.get("duration") or 0) / 1000)}' for t in tracks if t.get("name")]
         found = list(found.values())
     if isinstance(found, list):
         for part in found:
@@ -163,7 +164,7 @@ def main():
         "  const char *artist;",
         "  const char *art;       // the cover's address between ART_HOST and ART_SIZE",
         "  const char *tagline;   // one sentence about it, \"\" for none",
-        "  const char *tracks;    // its tracks in the order of the record, a line each, \"\" when not known",
+        "  const char *tracks;    // its tracks in the order of the record, a line each (name, tab, seconds), or \"\"",
         "};",
         "",
         f"static const char *const ART_HOST = {quoted(ART_HOST)};",

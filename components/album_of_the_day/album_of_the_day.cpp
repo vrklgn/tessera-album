@@ -66,19 +66,101 @@ static bool on_player(const Album &a, const std::string &album, const std::strin
   return artist.empty() || (artist.size() >= n && same(artist.c_str(), a.artist, n));
 }
 
+// One track of an album: its name (not ended, `length` bytes) and how long it is.
+struct Track {
+  const char *name = "";
+  size_t length = 0;
+  int seconds = 0;
+};
+
+// The track at `index` of the album (0 the first), from its line "name<tab>seconds"; false past the last.
+static bool track_at(const Album &a, int index, Track &out) {
+  const char *line = a.tracks;
+  for (int i = 0; *line; ++i) {
+    const char *end = strchr(line, '\n');
+    const size_t n = end ? static_cast<size_t>(end - line) : strlen(line);
+    if (i == index) {
+      const char *tab = static_cast<const char *>(memchr(line, '\t', n));
+      out.name = line;
+      out.length = tab ? static_cast<size_t>(tab - line) : n;
+      out.seconds = tab ? atoi(tab + 1) : 0;
+      return true;
+    }
+    if (!end) break;
+    line = end + 1;
+  }
+  return false;
+}
+
+static int track_count(const Album &a) {
+  int count = a.tracks[0] ? 1 : 0;
+  for (const char *t = a.tracks; *t; ++t) count += *t == '\n';
+  return count;
+}
+
+// How long the first `tracks` tracks of the album are together, in seconds.
+static int seconds_of(const Album &a, int tracks) {
+  int sum = 0;
+  Track t;
+  for (int i = 0; i < tracks && track_at(a, i, t); ++i) sum += t.seconds;
+  return sum;
+}
+
+// A length as a player writes it: "3:07".
+static std::string length_text(int seconds) {
+  char text[12];
+  snprintf(text, sizeof(text), "%d:%02d", seconds / 60, seconds % 60);
+  return text;
+}
+
 // The place of a track on the album by its name, 1 the first, 0 when the album does not have it. The player's name
 // may be cut short or carry an edition after it, so one of the two starting with the other is the same track.
 static int track_number(const Album &a, const char *title) {
   const size_t t = strlen(title);
-  int number = 1;
-  for (const char *name = a.tracks; t && *name; ++number) {
-    const char *end = strchr(name, '\n');
-    const size_t n = end ? static_cast<size_t>(end - name) : strlen(name);
-    if (n && same(name, title, std::min(n, t)) && (n == t || std::min(n, t) >= 4)) return number;
-    if (!end) break;
-    name = end + 1;
+  Track track;
+  for (int i = 0; t && track_at(a, i, track); ++i) {
+    const size_t n = std::min(track.length, t);
+    if (n && same(track.name, title, n) && (track.length == t || n >= 4)) return i + 1;
   }
   return 0;
+}
+
+// The album on a player: the other speakers join it first, so all of them play the one album together, then Music
+// Assistant plays the album there instead of what its queue held. False when Home Assistant was not reached.
+static bool start_album(const Album &a, const std::string &player, const tessera::Text *also) {
+  JsonDocument group;
+  JsonArray members = group["group_members"].to<JsonArray>();
+  const std::string first = plain(also[0]), second = plain(also[1]);
+  if (!first.empty() && first != player) members.add(first);
+  if (!second.empty() && second != player && second != first) members.add(second);
+  if (members.size() > 0) tessera::action(JOIN, player, group);
+  JsonDocument d;
+  d["media_id"] = a.title;
+  d["media_type"] = "album";
+  d["artist"] = a.artist;
+  d["enqueue"] = "replace";
+  return tessera::action(PLAY, player, d);
+}
+
+// The volume of a player a step of five in a hundred down or up, and what it is then; where the player does not say
+// its volume (`level` under 0), a step of its own.
+static float turn_volume(const std::string &player, float level, int by) {
+  if (level < 0) {
+    tessera::action(by > 0 ? LOUDER : QUIETER, player);
+    return level;
+  }
+  const int hundredths = std::max(0, std::min(100, static_cast<int>(level * 100.0f + 0.5f) + by * 5));
+  JsonDocument d;
+  d["volume_level"] = static_cast<float>(hundredths) / 100.0f;
+  tessera::action(VOLUME, player, d);
+  return static_cast<float>(hundredths) / 100.0f;
+}
+
+// A player's volume from its `volume_level`, -1 when it does not say one.
+static float volume_of(JsonVariantConst level) {
+  if (level.is<float>()) return level.as<float>();
+  if (level.is<const char *>()) return static_cast<float>(atof(level.as<const char *>()));
+  return -1.0f;
 }
 
 // "No. 37", and the year after it where it is known and fits `width`.
@@ -97,6 +179,27 @@ static lv_obj_t *plain_block(lv_obj_t *parent, theme::Role fill) {
   lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_pad_all(o, 0, 0);
   return o;
+}
+
+// A round key: an icon of Tessera's set on a circle.
+static lv_obj_t *round_block(lv_obj_t *parent, uint32_t icon, int x, int y, int size, theme::Role fill, theme::Role ink) {
+  lv_obj_t *key = plain_block(parent, fill);
+  lv_obj_set_size(key, size, size);
+  lv_obj_set_style_radius(key, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_pos(key, x, y);
+  lv_obj_t *glyph = ui::label(key, Font::ICON_SMALL, ink);
+  lv_obj_set_width(glyph, size);
+  lv_obj_set_style_text_align(glyph, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_pos(glyph, 0, (size - ui::line_height(Font::ICON_SMALL)) / 2);
+  ui::set_text(glyph, ui::icon(icon));
+  return key;
+}
+
+// Whether a point is on a round key, a little room round it counted in.
+static bool on_key(lv_obj_t *key, const tessera::Point &p, int size) {
+  if (!key || lv_obj_has_flag(key, LV_OBJ_FLAG_HIDDEN)) return false;
+  const int x = lv_obj_get_x(key), y = lv_obj_get_y(key), slack = ui::px(5);
+  return p.x >= x - slack && p.x < x + size + slack && p.y >= y - ui::px(8) && p.y <= y + size + ui::px(8);
 }
 
 // The cover's place: a picture's, or on a board without pictures (the CYD) a block with the album's place in the list
@@ -150,6 +253,11 @@ struct Art {
 // the cover over them. It changes at midnight on the screen's own clock. A tap opens the album's card. The tile's
 // entity is the Music Assistant player that plays it. Its `background` option takes the card behind it away, or tints
 // it in one of the four colours of the Tessera mark.
+//
+// A large tile is a deck, with everything on the page itself: the cover and the words in a band at the top, with keys
+// that play and pause the album and turn the volume; a bar that says how far into the album the player is; and under
+// it every track with its length, the one that plays standing out. A tap on a key works it, a tap anywhere else opens
+// the card. No key skips a track.
 class AlbumTile : public tessera::Tile {
  public:
   explicit AlbumTile(AlbumOfTheDay *plugin) : plugin_(plugin) {}
@@ -170,7 +278,9 @@ class AlbumTile : public tessera::Tile {
     const bool square = ground_ != Ground::DEFAULT;
     paint_ground(true);
     const int th = ui::line_height(Font::TITLE), bh = ui::line_height(Font::BODY), gap = ui::px(8);
-    if (c.columns == 1 && c.rows == 1) {
+    if (plan_deck()) {
+      make_deck(c.parent, square);
+    } else if (c.columns == 1 && c.rows == 1) {
       // One cell: the cover over the whole card.
       const int s = std::min(width_, height_);
       art_.make(c.parent, (width_ - s) / 2, (height_ - s) / 2, s, square);
@@ -211,12 +321,18 @@ class AlbumTile : public tessera::Tile {
     album_ = tessera::Text(data["attributes"]["media_album_name"] | "");
     playing_artist_ = tessera::Text(data["attributes"]["media_artist"] | "");
     track_ = tessera::Text(data["attributes"]["media_title"] | "");
+    level_ = volume_of(data["attributes"]["volume_level"]);
     if (shown_) show();
   }
 
   // The album follows the clock: another one at midnight.
   void on_tick(uint32_t epoch) override {
     paint_ground(false);
+    // A key that did not reach Home Assistant says so for a few seconds.
+    if (failed_ && esphome::millis() - failed_at_ > 5000) {
+      failed_ = false;
+      if (shown_) show();
+    }
     const int now = album_of(epoch, mixed_);
     if (now == at_ && shown_) return;
     at_ = now;
@@ -231,12 +347,50 @@ class AlbumTile : public tessera::Tile {
     if (title_) ui::set_color(title_, theme::INK);
     if (artist_) ui::set_color(artist_, theme::MUTED);
     if (tagline_) ui::set_color(tagline_, theme::MUTED);
+    if (deck_) {
+      ui::set_color(head_, theme::MUTED);
+      ui::set_fill(bar_, tessera::Tone::NORMAL, theme::TRACK);
+      ui::set_fill(bar_fill_, tessera::Tone::NORMAL, theme::ACCENT);
+      if (volume_) ui::set_color(volume_, theme::MUTED);
+      if (play_) ui::set_color(lv_obj_get_child(play_, 0), theme::ON_ACCENT);
+      for (lv_obj_t *key : {quieter_, louder_}) {
+        if (!key) continue;
+        ui::set_fill(key, tessera::Tone::NORMAL, theme::TRACK);
+        ui::set_color(lv_obj_get_child(key, 0), theme::INK);
+      }
+      for (int i = 0; i < slots_; ++i) {
+        ui::set_color(names_[i], theme::INK);
+        ui::set_color(times_[i], theme::MUTED);
+      }
+    }
     if (shown_) show();
   }
 
-  // The card of the album, with what the tile knows: the card is made after this and reads it from the plugin.
+  // A deck's keys work the player; a tap anywhere else opens the card of the album, with what the tile knows: the
+  // card is made after this and reads it from the plugin.
   void on_tap() override {
     if (at_ < 0) return;
+    if (deck_ && !player_.empty()) {
+      const tessera::Point p = tessera::tap_point();
+      const std::string player = plain(player_);
+      if (on_key(play_, p, round_)) {
+        if (on_ && (state_ == "playing" || state_ == "paused")) {
+          tessera::action(PAUSE, player);
+        } else if (!start_album(ALBUMS[at_], player, also_)) {
+          failed_ = true;
+          failed_at_ = esphome::millis();
+        }
+        show();
+        return;
+      }
+      if (on_key(quieter_, p, round_) || on_key(louder_, p, round_)) {
+        level_ = turn_volume(player, level_, on_key(louder_, p, round_) ? 1 : -1);
+        show();
+        return;
+      }
+      // A finger between two keys meant a key, not the card.
+      if (p.x >= words_x_ && p.y >= keys_y_ - ui::px(8) && p.y <= keys_y_ + round_ + ui::px(8)) return;
+    }
     plugin_->chosen = at_;
     plugin_->also[0] = also_[0];
     plugin_->also[1] = also_[1];
@@ -284,8 +438,151 @@ class AlbumTile : public tessera::Tile {
     }
   }
 
+  // Whether the tile has the room of a deck, and its measures then: the band of the cover and the words, the keys in
+  // it, and how many tracks stand under it, in one column or two.
+  bool plan_deck() {
+    const int th = ui::line_height(Font::TITLE), bh = ui::line_height(Font::BODY), gap = ui::px(8);
+    round_ = ui::mm(8);
+    const int words = bh + ui::px(2) + th + ui::px(2) + bh;
+    const int band = words + (player_.empty() ? 0 : gap + round_);
+    side_ = std::max(band, std::min(height_ * 32 / 100, width_ * 38 / 100));
+    row_h_ = bh + ui::px(5);
+    bar_y_ = side_ + gap;
+    list_y_ = bar_y_ + ui::px(4) + ui::px(6) + bh + ui::px(6);
+    rows_ = std::min(MAX_ROWS, (height_ - list_y_) / row_h_);
+    columns_ = (width_ - ui::px(16)) / 2 >= ui::px(180) ? 2 : 1;
+    while (rows_ * columns_ > MAX_SLOTS) --rows_;
+    words_x_ = side_ + ui::px(12);
+    words_w_ = width_ - words_x_;
+    return width_ >= ui::px(250) && words_w_ >= ui::px(110) && rows_ >= 4;
+  }
+
+  void make_deck(lv_obj_t *parent, bool square) {
+    const int th = ui::line_height(Font::TITLE), bh = ui::line_height(Font::BODY), gap = ui::px(8);
+    deck_ = true;
+    art_.make(parent, 0, 0, side_, square);
+    // The words beside the cover, at the top of the band; the keys at its foot.
+    place_ = ui::label(parent, Font::BODY, theme::MUTED);
+    title_ = ui::label(parent, Font::TITLE, theme::INK);
+    artist_ = ui::label(parent, Font::BODY, theme::MUTED);
+    int y = 0;
+    for (lv_obj_t *o : {place_, title_, artist_}) {
+      lv_obj_set_width(o, words_w_);
+      lv_obj_set_pos(o, words_x_, y);
+      y += (o == title_ ? th : bh) + ui::px(2);
+    }
+    if (!player_.empty()) {
+      // Three round keys, smaller where the row would not fit, and the volume in words after them.
+      if (3 * round_ + 2 * gap > words_w_) round_ = std::max(1, (words_w_ - 2 * gap) / 3);
+      keys_y_ = side_ - round_;
+      int x = words_x_;
+      play_ = round_block(parent, ICON_PLAY, x, keys_y_, round_, theme::ACCENT, theme::ON_ACCENT);
+      x += round_ + gap;
+      quieter_ = round_block(parent, ICON_QUIETER, x, keys_y_, round_, theme::TRACK, theme::INK);
+      x += round_ + gap;
+      louder_ = round_block(parent, ICON_LOUDER, x, keys_y_, round_, theme::TRACK, theme::INK);
+      x += round_ + gap;
+      if (width_ - x >= ui::text_width("100%", Font::BODY)) {
+        volume_ = ui::label(parent, Font::BODY, theme::MUTED);
+        lv_obj_set_width(volume_, width_ - x);
+        lv_obj_set_pos(volume_, x, keys_y_ + (round_ - bh) / 2);
+      }
+    }
+    // How far into the album the player is: a thin bar over the whole width, filled up to the track that plays.
+    bar_ = plain_block(parent, theme::TRACK);
+    lv_obj_set_size(bar_, width_, ui::px(4));
+    lv_obj_set_pos(bar_, 0, bar_y_);
+    lv_obj_set_style_radius(bar_, ui::px(2), 0);
+    bar_fill_ = plain_block(parent, theme::ACCENT);
+    lv_obj_set_size(bar_fill_, 1, ui::px(4));
+    lv_obj_set_pos(bar_fill_, 0, bar_y_);
+    lv_obj_set_style_radius(bar_fill_, ui::px(2), 0);
+    lv_obj_add_flag(bar_fill_, LV_OBJ_FLAG_HIDDEN);
+    // How many tracks and how long together, then the tracks: a place for each line the room has.
+    head_ = ui::label(parent, Font::BODY, theme::MUTED);
+    lv_obj_set_width(head_, width_);
+    lv_obj_set_pos(head_, 0, bar_y_ + ui::px(4) + ui::px(6));
+    slots_ = rows_ * columns_;
+    for (int i = 0; i < slots_; ++i) {
+      names_[i] = ui::label(parent, Font::BODY, theme::INK);
+      times_[i] = ui::label(parent, Font::BODY, theme::MUTED);
+      lv_obj_set_style_text_align(times_[i], LV_TEXT_ALIGN_RIGHT, 0);
+    }
+  }
+
+  void show_deck(const Album *a) {
+    art_.show(a);
+    const int count = a ? track_count(*a) : 0;
+    on_ = a && on_player(*a, plain(album_), plain(playing_artist_));
+    const bool sounding = state_ == "playing", held = state_ == "paused";
+    const int number = on_ && (sounding || held) && !track_.empty() ? track_number(*a, track_.c_str()) : 0;
+    // A track the album's list does not know by that name stands where the album's place in the list did.
+    const bool unknown = on_ && sounding && !track_.empty() && !number;
+    ui::set_text(place_, unknown ? plain(track_) : a ? place_line(plugin_, *a, words_w_, Font::BODY, true) : "");
+    ui::set_tone(place_, unknown ? tessera::Tone::GOOD : tessera::Tone::NORMAL, theme::MUTED);
+    ui::set_text(title_, a ? a->title : "");
+    ui::set_text(artist_, a ? a->artist : "");
+    // The key that plays: pause while the album sounds, green then; amber when Home Assistant was not reached.
+    if (play_) {
+      ui::set_text(lv_obj_get_child(play_, 0), ui::icon(on_ && sounding ? ICON_PAUSE : ICON_PLAY));
+      ui::set_fill(play_, failed_ ? tessera::Tone::BUSY : on_ && sounding ? tessera::Tone::GOOD : tessera::Tone::NORMAL,
+                   theme::ACCENT);
+    }
+    if (volume_) {
+      char percent[8] = "";
+      if (level_ >= 0) snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(level_ * 100.0f + 0.5f));
+      ui::set_text(volume_, percent);
+    }
+    // "16 tracks · 77 min", and the bar up to where the track that plays starts.
+    const int total = a ? seconds_of(*a, count) : 0;
+    std::string head;
+    if (count) {
+      head = tessera::format(plugin_->text("tracks"), count);
+      if (total) head += (ui::covers(" · ", Font::BODY) ? " · " : ", ") + tessera::format(plugin_->text("minutes"), (total + 30) / 60);
+    }
+    ui::set_text(head_, head);
+    const int done = number > 1 && total ? width_ * seconds_of(*a, number - 1) / total : number ? ui::px(4) : 0;
+    if (done > 0) {
+      lv_obj_set_width(bar_fill_, std::min(width_, std::max(ui::px(4), done)));
+      lv_obj_remove_flag(bar_fill_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(bar_fill_, LV_OBJ_FLAG_HIDDEN);
+    }
+    // The tracks: one column while it holds them all, else two where the tile has them. An album longer than its
+    // places shows the part round the track that plays.
+    const int columns = count > rows_ ? columns_ : 1;
+    const int places = rows_ * columns, between = ui::px(16);
+    const int column_w = (width_ - (columns - 1) * between) / columns;
+    const int time_w = ui::text_width("00:00", Font::BODY) + ui::px(2);
+    int first = 0;
+    if (count > places && number) first = std::max(0, std::min(count - places, number - 1 - places / 2));
+    Track track;
+    for (int i = 0; i < slots_; ++i) {
+      if (i >= places || !a || !track_at(*a, first + i, track)) {
+        lv_obj_add_flag(names_[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(times_[i], LV_OBJ_FLAG_HIDDEN);
+        continue;
+      }
+      const int x = (i / rows_) * (column_w + between), y = list_y_ + (i % rows_) * row_h_;
+      lv_obj_set_width(names_[i], column_w - time_w - ui::px(6));
+      lv_obj_set_pos(names_[i], x, y);
+      lv_obj_set_width(times_[i], time_w);
+      lv_obj_set_pos(times_[i], x + column_w - time_w, y);
+      char place[8];
+      snprintf(place, sizeof(place), "%d  ", first + i + 1);
+      ui::set_text(names_[i], std::string(place) + std::string(track.name, track.length));
+      ui::set_text(times_[i], track.seconds ? length_text(track.seconds) : "");
+      const tessera::Tone tone = first + i + 1 == number ? tessera::Tone::ACCENT : tessera::Tone::NORMAL;
+      ui::set_tone(names_[i], tone, theme::INK);
+      ui::set_tone(times_[i], tone, theme::MUTED);
+      lv_obj_remove_flag(names_[i], LV_OBJ_FLAG_HIDDEN);
+      lv_obj_remove_flag(times_[i], LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
   void show() {
     const Album *a = at_ >= 0 ? &ALBUMS[at_] : nullptr;
+    if (deck_) return show_deck(a);
     art_.show(a);
     if (!title_) return;
     ui::set_text(title_, a ? a->title : "");
@@ -328,6 +625,14 @@ class AlbumTile : public tessera::Tile {
   Ground ground_ = Ground::DEFAULT;
   tessera::Text player_, also_[2], state_, album_, playing_artist_, track_;
   lv_obj_t *parent_{}, *place_{}, *title_{}, *artist_{}, *tagline_{};
+  // The deck: the longest album of the list has forty tracks, so forty places hold any of them.
+  static constexpr int MAX_SLOTS = 40, MAX_ROWS = 24;
+  bool deck_ = false, on_ = false, failed_ = false;
+  int side_ = 0, round_ = 0, keys_y_ = 0, bar_y_ = 0, list_y_ = 0, row_h_ = 0, rows_ = 0, columns_ = 1, slots_ = 0;
+  float level_ = -1.0f;
+  uint32_t failed_at_ = 0;
+  lv_obj_t *play_{}, *quieter_{}, *louder_{}, *volume_{}, *bar_{}, *bar_fill_{}, *head_{};
+  lv_obj_t *names_[MAX_SLOTS] = {}, *times_[MAX_SLOTS] = {};
 };
 
 // The card of the album: its cover large, then its place in the list and its year over its title, the artist under
@@ -349,8 +654,7 @@ class AlbumCard : public tessera::Card {
     const bool player = !player_.empty();
     const int bh = ui::line_height(Font::BODY), bl = ui::line_height(Font::BODY_LARGE), gap = ui::px(10);
     key_h_ = std::max(ui::mm(9), bl + ui::px(18));
-    for (const char *t = a.tracks; *t; ++t) count_ += *t == '\n';
-    if (a.tracks[0]) ++count_;
+    count_ = track_count(a);
     // The round keys: the tracks where the list knows them, the volume where there is a player.
     const int rounds = (count_ ? 1 : 0) + (player ? 2 : 0);
     round_ = ui::mm(8);
@@ -476,8 +780,7 @@ class AlbumCard : public tessera::Card {
     album_ = tessera::Text(attributes["media_album_name"] | "");
     playing_artist_ = tessera::Text(attributes["media_artist"] | "");
     track_ = tessera::Text(attributes["media_title"] | "");
-    JsonVariantConst level = attributes["volume_level"];
-    level_ = level.is<float>() ? level.as<float>() : level.is<const char *>() ? static_cast<float>(atof(level.as<const char *>())) : -1.0f;
+    level_ = volume_of(attributes["volume_level"]);
     plugin_->player_name = tessera::Text(data["name"] | "");
     paint();
   }
@@ -519,14 +822,17 @@ class AlbumCard : public tessera::Card {
     }
     const tessera::Point p = tessera::tap_point();
     if (p.x < 0 || p.y < 0) return;
-    if (on_round(tracks_, p)) {
+    if (on_key(tracks_, p, round_)) {
       lv_obj_remove_flag(list_, LV_OBJ_FLAG_HIDDEN);
       return;
     }
     if (player_.empty()) return;
     const std::string player = plain(player_);
-    if (on_round(quieter_, p)) return turn(player, -1);
-    if (on_round(louder_, p)) return turn(player, 1);
+    if (on_key(quieter_, p, round_) || on_key(louder_, p, round_)) {
+      level_ = turn_volume(player, level_, on_key(louder_, p, round_) ? 1 : -1);
+      paint();
+      return;
+    }
     const int slack = ui::px(8);
     if (p.y < key_y_ - slack || p.y > key_y_ + key_h_ + slack / 2) return;
     if (p.x < key_x_ - slack || p.x > key_x_ + key_w_ + slack) return;
@@ -535,20 +841,7 @@ class AlbumCard : public tessera::Card {
       tessera::action(PAUSE, player);
       return;
     }
-    const Album &a = ALBUMS[at_];
-    // The other speakers join the tile's player, so all of them play the one album together.
-    JsonDocument group;
-    JsonArray members = group["group_members"].to<JsonArray>();
-    const std::string first = plain(also_[0]), second = plain(also_[1]);
-    if (!first.empty() && first != player) members.add(first);
-    if (!second.empty() && second != player && second != first) members.add(second);
-    if (members.size() > 0) tessera::action(JOIN, player, group);
-    JsonDocument d;
-    d["media_id"] = a.title;
-    d["media_type"] = "album";
-    d["artist"] = a.artist;
-    d["enqueue"] = "replace";
-    sent_ = tessera::action(PLAY, player, d) ? Sent::YES : Sent::FAILED;
+    sent_ = start_album(ALBUMS[at_], player, also_) ? Sent::YES : Sent::FAILED;
     sent_at_ = esphome::millis();
     paint();
   }
@@ -560,37 +853,7 @@ class AlbumCard : public tessera::Card {
 
   // A round key of the row under the large one: an icon on a soft circle.
   lv_obj_t *round_key(lv_obj_t *parent, uint32_t icon, int x) {
-    lv_obj_t *key = plain_block(parent, theme::TRACK);
-    lv_obj_set_size(key, round_, round_);
-    lv_obj_set_style_radius(key, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_pos(key, x, round_y_);
-    lv_obj_t *glyph = ui::label(key, Font::ICON_SMALL, theme::INK);
-    lv_obj_set_width(glyph, round_);
-    lv_obj_set_style_text_align(glyph, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(glyph, 0, (round_ - ui::line_height(Font::ICON_SMALL)) / 2);
-    ui::set_text(glyph, ui::icon(icon));
-    return key;
-  }
-
-  // Whether a tap is on a round key, half the gap to its neighbour counted in.
-  bool on_round(lv_obj_t *key, const tessera::Point &p) const {
-    if (!key) return false;
-    const int x = lv_obj_get_x(key), slack = ui::px(5);
-    return p.x >= x - slack && p.x < x + round_ + slack && p.y >= round_y_ - slack && p.y <= round_y_ + round_ + ui::px(8);
-  }
-
-  // The volume a step of five in a hundred down or up; where the player does not say its volume, a step of its own.
-  void turn(const std::string &player, int by) {
-    if (level_ < 0) {
-      tessera::action(by > 0 ? LOUDER : QUIETER, player);
-      return;
-    }
-    const int hundredths = std::max(0, std::min(100, static_cast<int>(level_ * 100.0f + 0.5f) + by * 5));
-    level_ = static_cast<float>(hundredths) / 100.0f;
-    JsonDocument d;
-    d["volume_level"] = level_;
-    tessera::action(VOLUME, player, d);
-    paint();
+    return round_block(parent, icon, x, round_y_, round_, theme::TRACK, theme::INK);
   }
 
   // The tracks, over the whole card in the page's own colour: a numbered line each, in two columns when one does not
@@ -607,17 +870,22 @@ class AlbumCard : public tessera::Card {
     const int column_w = (wide - (columns - 1) * between) / columns;
     const int places = rows * columns;
     listed_ = count_ <= places ? count_ : places - 1;
-    const char *name = a.tracks;
-    for (int i = 0; i < listed_; ++i) {
+    // Each line its name, with its length at the right of it.
+    const int time_w = ui::text_width("00:00", Font::BODY) + ui::px(2);
+    Track track;
+    for (int i = 0; i < listed_ && track_at(a, i, track); ++i) {
+      const int x = pad_ + (i / rows) * (column_w + between), y = pad_ + (i % rows) * row;
       lv_obj_t *line = ui::label(list_, Font::BODY, theme::INK);
-      lv_obj_set_width(line, column_w);
-      lv_obj_set_pos(line, pad_ + (i / rows) * (column_w + between), pad_ + (i % rows) * row);
-      const char *end = strchr(name, '\n');
-      const size_t n = end ? static_cast<size_t>(end - name) : strlen(name);
+      lv_obj_set_width(line, column_w - time_w - ui::px(6));
+      lv_obj_set_pos(line, x, y);
       char number[8];
       snprintf(number, sizeof(number), "%d  ", i + 1);
-      ui::set_text(line, std::string(number) + std::string(name, n));
-      name = end ? end + 1 : name + n;
+      ui::set_text(line, std::string(number) + std::string(track.name, track.length));
+      lv_obj_t *time = ui::label(list_, Font::BODY, theme::MUTED);
+      lv_obj_set_width(time, time_w);
+      lv_obj_set_style_text_align(time, LV_TEXT_ALIGN_RIGHT, 0);
+      lv_obj_set_pos(time, x + column_w - time_w, y);
+      ui::set_text(time, track.seconds ? length_text(track.seconds) : "");
     }
     if (listed_ < count_) {
       more_ = ui::label(list_, Font::BODY, theme::MUTED);
@@ -648,8 +916,11 @@ class AlbumCard : public tessera::Card {
     ui::set_text(now_, player ? line : "");
     ui::set_tone(now_, now ? tessera::Tone::GOOD : tessera::Tone::NORMAL, theme::MUTED);
     // The track that plays stands out among the tracks.
-    for (int i = 0; list_ && i < listed_; ++i)
-      ui::set_tone(lv_obj_get_child(list_, i), i + 1 == number ? tessera::Tone::ACCENT : tessera::Tone::NORMAL, theme::INK);
+    for (int i = 0; list_ && i < listed_; ++i) {
+      const tessera::Tone tone = i + 1 == number ? tessera::Tone::ACCENT : tessera::Tone::NORMAL;
+      ui::set_tone(lv_obj_get_child(list_, 2 * i), tone, theme::INK);
+      ui::set_tone(lv_obj_get_child(list_, 2 * i + 1), tone, theme::MUTED);
+    }
     // The key: "Play on Living room" when that fits, else "Play"; "Pause" and "Go on" while the album is on.
     const int icon_w = ui::line_height(Font::ICON_SMALL), space = ui::px(8), inner = ui::px(22);
     std::string words = plugin_->text(now ? "pause" : waits ? "resume" : sent_ == Sent::YES ? "sent"

@@ -11,7 +11,9 @@
     "no_player": "Choose a Music Assistant player for this tile in the editor to play it here.",
     "more": "+ 1 more | + {n} more",
     "pause": "Pause",
-    "resume": "Resume"
+    "resume": "Resume",
+    "tracks": "1 track | {n} tracks",
+    "minutes": "{n} min"
   },
   "app": {
     "name": "Album of the day",

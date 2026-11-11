@@ -18,7 +18,11 @@ This plugin is not made by or with Apple. The list and the sentences about the a
 1. In the Tessera app, open **Plugins**, choose **Add with a link** and give it
    `https://github.com/vrklgn/tessera-album`. Add the plugin to a screen; the screen builds once.
 2. In Layout, place the **Album of the day** tile from the library's Plugins group. One cell shows the cover alone; a
-   wide tile shows the cover beside the words; a tall tile shows the cover over the title and artist.
+   wide tile shows the cover beside the words; a tall tile shows the cover over the title and artist. A large tile
+   (about three by three cells and up, to five by five) is a deck: the cover and the words at the top with keys that
+   play, pause and turn the volume, a bar that says how far into the album you are, and under it every track with its
+   length and the album's whole length, the track that plays standing out. A tap on a key works it; a tap anywhere
+   else opens the album's card.
 3. To play from the screen, choose the tile's player in the inspector: it offers the players of
    [Music Assistant](https://www.music-assistant.io) in Home Assistant. A Music Assistant group plays on all its
    speakers.
@@ -38,6 +42,9 @@ This plugin is not made by or with Apple. The list and the sentences about the a
   members takes no others, so choose either the group or single speakers.
 - The screen must be allowed to perform Home Assistant actions (the ESPHome integration's option, which Tessera turns
   on when it adds the screen).
+- The deck needs room for at least four tracks under its cover; a tile with less shows the smaller form. An album with
+  more tracks than the deck has lines (the longest has forty) shows the part round the track that plays.
+- The bar fills up to the start of the track that plays: it counts whole tracks, not the seconds within one.
 - The volume keys step five in a hundred on the tile's player (a Music Assistant group turns all its speakers); the
   speakers joined as second and third keep the volume they had.
 - The track that plays is found among the album's tracks by its name, so its place ("3/16") shows only where the

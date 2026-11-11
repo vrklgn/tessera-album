@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+- The tile goes up to five by five cells.
+
+## 0.4.0
+- A large tile is a deck, on the page itself: the cover and the words, keys that play and pause the album and turn
+  the volume, a bar that says how far into the album the player is, and every track with its length, the one that
+  plays standing out.
+- The tracks carry their lengths, on the card's list too, and the deck says how long the album is.
+
 ## 0.3.0
 - The card says which track plays, with its place on the album, and marks it among the tracks; a wide tile shows it
   too while the album plays.
