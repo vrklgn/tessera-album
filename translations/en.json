@@ -6,12 +6,12 @@
     "place": "No. {n}",
     "play": "Play",
     "play_on": "Play on {player}",
-    "playing": "Playing",
     "sent": "Starting",
     "retry": "Try again",
     "no_player": "Choose a Music Assistant player for this tile in the editor to play it here.",
-    "tracks": "Tracks",
-    "more": "+ 1 more | + {n} more"
+    "more": "+ 1 more | + {n} more",
+    "pause": "Pause",
+    "resume": "Resume"
   },
   "app": {
     "name": "Album of the day",

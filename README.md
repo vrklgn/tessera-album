@@ -3,7 +3,9 @@
 One album a day on a [Tessera](https://github.com/MaxGramser/homeassistant_espscreen) screen, from Apple Music's list of
 the [100 Best Albums](https://100best.music.apple.com/us): its cover, its place in the list, its title and its artist.
 Tap the tile to open the album with its cover large and a sentence about it; a key there plays it on the speakers you
-chose, through Music Assistant in Home Assistant, and a second key shows its tracks.
+chose, through Music Assistant in Home Assistant. While it plays, the card says which track is on, the key pauses it
+and lets it go on, and round keys show its tracks and turn the volume down and up. There is no key to skip a track, on
+purpose: an album is heard from its first track to its last.
 
 The album changes at midnight. Counting down, the tile starts somewhere in the list and goes from number 100 to number
 1 in a hundred days, then starts again; mixed, it jumps through the list and still shows every album once in a hundred
@@ -36,8 +38,12 @@ This plugin is not made by or with Apple. The list and the sentences about the a
   members takes no others, so choose either the group or single speakers.
 - The screen must be allowed to perform Home Assistant actions (the ESPHome integration's option, which Tessera turns
   on when it adds the screen).
-- **Tracks** on the album's card lays the tracks over it, in two columns where they fit; a long album ends in
-  "+ 4 more". A tap anywhere, or Back, takes them away again.
+- The volume keys step five in a hundred on the tile's player (a Music Assistant group turns all its speakers); the
+  speakers joined as second and third keep the volume they had.
+- The track that plays is found among the album's tracks by its name, so its place ("3/16") shows only where the
+  service names the track as Apple does.
+- The round key with the list on the album's card lays the tracks over it, in two columns where they fit; a long album ends in
+  "+ 4 more", and the track that plays stands out. A tap anywhere, or Back, takes them away again.
 - With a background other than Default the cover has square corners. The soft colours are the four colours of the
   Tessera mark, thinned; they are darker in the dark look.
 - The background is the plugin's own doing: it changes the look of the screen's card behind the tile, which the plugin
