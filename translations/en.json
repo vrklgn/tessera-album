@@ -9,7 +9,9 @@
     "playing": "Playing",
     "sent": "Starting",
     "retry": "Try again",
-    "no_player": "Choose a Music Assistant player for this tile in the editor to play it here."
+    "no_player": "Choose a Music Assistant player for this tile in the editor to play it here.",
+    "tracks": "Tracks",
+    "more": "+ 1 more | + {n} more"
   },
   "app": {
     "name": "Album of the day",
@@ -23,6 +25,14 @@
     "order": "Order",
     "order_hint": "Count down from number 100 to number 1, or go through the list in a mixed order. Either way every album comes once in a hundred days.",
     "order_countdown": "Count down, 100 to 1",
-    "order_mixed": "Mixed"
+    "order_mixed": "Mixed",
+    "background": "Background",
+    "background_hint": "The card behind the tile: the usual one, none at all so the cover stands on the page itself, or a soft colour.",
+    "background_default": "Default",
+    "background_none": "None",
+    "background_blue": "Blue",
+    "background_yellow": "Yellow",
+    "background_purple": "Purple",
+    "background_green": "Green"
   }
 }

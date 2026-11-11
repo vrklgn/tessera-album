@@ -89,6 +89,29 @@ def short(title):
         title = title[:found.start()]
 
 
+DASHED = re.compile(r"\s+-\s+[^-]*(remaster|\bmix\b|mono|stereo)[^-]*$", re.I)
+
+
+def track(name):
+    """A track's name without its edition: "Come Together (2019 Mix)", "Money - 2011 Remaster"."""
+    return DASHED.sub("", short(name)) or plain(name)
+
+
+def tracks_of(found):
+    """The tracks of an album's page, wherever its data keeps them, in the order of the record."""
+    if isinstance(found, dict):
+        tracks = found.get("tracks")
+        if isinstance(tracks, list) and tracks and isinstance(tracks[0], dict) and "name" in tracks[0]:
+            return [track(t["name"]) for t in tracks if t.get("name")]
+        found = list(found.values())
+    if isinstance(found, list):
+        for part in found:
+            names = tracks_of(part)
+            if names:
+                return names
+    return []
+
+
 def quoted(text):
     return json.dumps(text, ensure_ascii=False)
 
@@ -114,15 +137,17 @@ def main():
         if not art.startswith(ART_HOST) or not art.endswith("/{w}x{h}bb.jpg"):
             raise SystemExit(f"{rank}: a cover from somewhere else, {art}")
         tagline = ""
-        for section in page(f"{SITE}/album/{rank}/__data.json")["article"]["sections"]:
+        detail = page(f"{SITE}/album/{rank}/__data.json")
+        for section in detail["article"]["sections"]:
             if section.get("sectionName") == "tagline":
                 tagline = plain(section.get("text"))
         time.sleep(0.2)
         row = {"rank": rank, "title": short(album["name"]), "artist": plain(album["artistName"]),
                "year": years.get(album["adamid"], 0), "art": art[len(ART_HOST):-len("/{w}x{h}bb.jpg")],
-               "tagline": tagline}
+               "tagline": tagline, "tracks": "\n".join(tracks_of(detail))}
         rows.append(row)
-        print(f'{rank:3} {row["title"]} / {row["artist"]} ({row["year"]})', file=sys.stderr)
+        print(f'{rank:3} {row["title"]} / {row["artist"]} ({row["year"]}), {row["tracks"].count(chr(10)) + 1} tracks',
+              file=sys.stderr)
 
     lines = [
         "#pragma once",
@@ -138,6 +163,7 @@ def main():
         "  const char *artist;",
         "  const char *art;       // the cover's address between ART_HOST and ART_SIZE",
         "  const char *tagline;   // one sentence about it, \"\" for none",
+        "  const char *tracks;    // its tracks in the order of the record, a line each, \"\" when not known",
         "};",
         "",
         f"static const char *const ART_HOST = {quoted(ART_HOST)};",
@@ -149,12 +175,13 @@ def main():
     for row in rows:
         lines.append(f'    {{{row["rank"]}, {row["year"]}, {quoted(row["title"])}, {quoted(row["artist"])},')
         lines.append(f'     {quoted(row["art"])},')
-        lines.append(f'     {quoted(row["tagline"])}}},')
+        lines.append(f'     {quoted(row["tagline"])},')
+        lines.append(f'     {quoted(row["tracks"])}}},')
     lines += ["};", "", "}  // namespace esphome::album_of_the_day", ""]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines), encoding="utf-8")
-    missing = [row["rank"] for row in rows if not row["year"] or not row["tagline"]]
-    print(f"{OUT}: {len(rows)} albums" + (f", year or tagline missing for {missing}" if missing else ""))
+    missing = [row["rank"] for row in rows if not row["year"] or not row["tagline"] or not row["tracks"]]
+    print(f"{OUT}: {len(rows)} albums" + (f", year, tagline or tracks missing for {missing}" if missing else ""))
 
 
 if __name__ == "__main__":

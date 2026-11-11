@@ -1,9 +1,9 @@
 # Album of the day: one album a day from Apple Music's list of the 100 best albums, its cover on a tile with its place in
 # the list, its title and its artist. A tap opens it, with a key that plays it through Music Assistant on the speakers
-# chosen for the tile. The list is built into the screen (tools/build_albums.py); only the covers come from the
-# internet. docs/MANIFEST.md of the Tessera plugins repository has every field.
+# chosen for the tile, and a key that shows its tracks. The list is built into the screen (tools/build_albums.py); only
+# the covers come from the internet. docs/MANIFEST.md of the Tessera plugins repository has every field.
 id: album_of_the_day
-version: 0.1.0
+version: 0.2.0
 api: "0.15"
 icon: album
 maintainer: vrklgn
@@ -13,7 +13,7 @@ topics: [media]
 requires:
   esphome: 2026.6.2
 boards: any
-flash_kb: 32
+flash_kb: 64
 
 permissions:
   # The covers, from Apple's picture host.
@@ -30,7 +30,7 @@ tiles:
     icon: album
     sizes: { min: 1x1, max: 4x4 }
     # Five labels, a block and a picture's place, and the tile's own numbers and names.
-    memory: 1200
+    memory: 1300
     pictures: 1
     # The speaker that plays the album: a Music Assistant player (only those carry `mass_player_type`). What it plays
     # now says whether the album of the day is on.
@@ -43,8 +43,13 @@ tiles:
       - { id: also_2, kind: entity, domains: [media_player], label: also_2, hint: also_hint }
       - { id: order, kind: choice, label: order, hint: order_hint, default: countdown,
           choices: [{ value: countdown, label: order_countdown }, { value: mixed, label: order_mixed }] }
+      # The card behind the tile: the usual one, none at all, or a tint in one of the colours of the Tessera mark.
+      - { id: background, kind: choice, label: background, hint: background_hint, default: default,
+          choices: [{ value: default, label: background_default }, { value: none, label: background_none },
+                    { value: blue, label: background_blue }, { value: yellow, label: background_yellow },
+                    { value: purple, label: background_purple }, { value: green, label: background_green }] }
 
 cards:
   # The album, opened by a tap on the tile: its cover large, its place, title, artist and year, a sentence about it,
-  # and a key that plays it.
+  # a key that plays it and a key that lays its tracks over the card.
   - { id: album, name: card_name, pictures: 1 }

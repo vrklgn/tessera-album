@@ -3,7 +3,7 @@
 One album a day on a [Tessera](https://github.com/MaxGramser/homeassistant_espscreen) screen, from Apple Music's list of
 the [100 Best Albums](https://100best.music.apple.com/us): its cover, its place in the list, its title and its artist.
 Tap the tile to open the album with its cover large and a sentence about it; a key there plays it on the speakers you
-chose, through Music Assistant in Home Assistant.
+chose, through Music Assistant in Home Assistant, and a second key shows its tracks.
 
 The album changes at midnight. Counting down, the tile starts somewhere in the list and goes from number 100 to number
 1 in a hundred days, then starts again; mixed, it jumps through the list and still shows every album once in a hundred
@@ -23,6 +23,8 @@ This plugin is not made by or with Apple. The list and the sentences about the a
 4. Optional: choose a **Second speaker** and a **Third speaker**. They are grouped with the tile's player when you
    press Play.
 5. **Order** chooses between counting down and a mixed order.
+6. **Background** chooses the card behind the tile: **Default**, **None** (the cover and the words stand on the page
+   itself), or a soft blue, yellow, purple or green.
 
 ## Good to know
 
@@ -34,6 +36,13 @@ This plugin is not made by or with Apple. The list and the sentences about the a
   members takes no others, so choose either the group or single speakers.
 - The screen must be allowed to perform Home Assistant actions (the ESPHome integration's option, which Tessera turns
   on when it adds the screen).
+- **Tracks** on the album's card lays the tracks over it, in two columns where they fit; a long album ends in
+  "+ 4 more". A tap anywhere, or Back, takes them away again.
+- With a background other than Default the cover has square corners. The soft colours are the four colours of the
+  Tessera mark, thinned; they are darker in the dark look.
+- The background is the plugin's own doing: it changes the look of the screen's card behind the tile, which the plugin
+  API has no call for. If a later Tessera paints its cards another way, this option may stop working; the rest of the
+  tile does not depend on it.
 - The album of the day follows the date alone, so every screen with the same order shows the same album.
 - A board without the memory for pictures (the CYD, the Waveshare 3.5-inch, the Hosyond 4-inch) shows the album's
   place in the list as a large number instead of its cover.
