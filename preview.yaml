@@ -1,0 +1,19 @@
+# What tools/preview.py of the Tessera plugins repository shows: the tile at its sizes and the album's card. The album
+# is the one of the day of the run, so its cover has no file here: the bench draws a picture in its place.
+tiles:
+  - tile: album
+    name: Album of the day
+    entity: media_player.living_room
+    sizes: [1x1, 2x1, 3x1, 1x2, 2x2, 3x2, 4x2, 2x3]
+  - tile: album
+    name: Mixed, no player
+    options: { order: mixed }
+    sizes: [2x2, 3x2]
+
+states:
+  media_player.living_room:
+    state: idle
+    attributes: { friendly_name: Living room, mass_player_type: group }
+
+cards:
+  - { card: album, entity: media_player.living_room }

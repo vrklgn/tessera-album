@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "name": "English"
+  },
+  "screen": {
+    "place": "No. {n}",
+    "play": "Play",
+    "play_on": "Play on {player}",
+    "playing": "Playing",
+    "sent": "Starting",
+    "retry": "Try again",
+    "no_player": "Choose a Music Assistant player for this tile in the editor to play it here."
+  },
+  "app": {
+    "name": "Album of the day",
+    "summary": "One album a day from Apple Music's 100 Best Albums, with a key that plays it on your speakers.",
+    "tile_name": "Album of the day",
+    "tile_example": "No. 12, OK Computer by Radiohead",
+    "card_name": "Album",
+    "also_1": "Second speaker",
+    "also_2": "Third speaker",
+    "also_hint": "Optional. A speaker that plays along: it is grouped with the tile's player when you press Play.",
+    "order": "Order",
+    "order_hint": "Count down from number 100 to number 1, or go through the list in a mixed order. Either way every album comes once in a hundred days.",
+    "order_countdown": "Count down, 100 to 1",
+    "order_mixed": "Mixed"
+  }
+}
