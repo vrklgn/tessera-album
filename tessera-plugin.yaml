@@ -1,9 +1,9 @@
 # Album of the day: one album a day from Apple Music's list of the 100 best albums, its cover on a tile with its place in
 # the list, its title and its artist. A tap opens it, with a key that plays it through Music Assistant on the speakers
-# chosen for the tile, and a key that shows its tracks. The list is built into the screen (tools/build_albums.py); only
+# chosen for the tile, keys that show its tracks and what Apple Music writes about it. The list is built into the screen (tools/build_albums.py); only
 # the covers come from the internet. docs/MANIFEST.md of the Tessera plugins repository has every field.
 id: album_of_the_day
-version: 0.5.0
+version: 0.6.0
 api: "0.15"
 icon: album
 maintainer: vrklgn
@@ -13,15 +13,16 @@ topics: [media]
 requires:
   esphome: 2026.6.2
 boards: any
-flash_kb: 80
+flash_kb: 130
 
 permissions:
   # The covers, from Apple's picture host.
   network: [is1-ssl.mzstatic.com]
   # The album played on the tile's Music Assistant player, found by its title and artist; the other speakers chosen
   # joined to that player first.
-  # Pause and go on, and the volume, on that player. No action skips a track.
+  # Pause and go on, a track back and on, and the volume, on that player.
   home_assistant_actions: [music_assistant.play_media, media_player.join, media_player.media_play_pause,
+                           media_player.media_next_track, media_player.media_previous_track,
                            media_player.volume_set, media_player.volume_up, media_player.volume_down]
 attributes: [cloud]
 privacy: https://github.com/vrklgn/tessera-album#privacy
@@ -31,16 +32,18 @@ tiles:
     name: tile_name
     icon: album
     sizes: { min: 1x1, max: 5x5 }
-    # A large tile is a deck: up to forty tracks of two labels each, five keys and blocks, the words and a picture's
+    # A large tile is a deck: up to forty tracks of two labels each, seven keys and blocks, the words and a picture's
     # place, and the tile's own numbers and names.
-    memory: 10000
+    # A large tile lying down is a spread: up to twenty-four tracks of three labels each and some thirty parts more.
+    memory: 11000
     # A deck has two places, one for each of its faces; only the one in sight asks for the cover.
     pictures: 2
     # The speaker that plays the album: a Music Assistant player (only those carry `mass_player_type`). What it plays
     # now says whether the album of the day is on.
     domains: [media_player]
     has_attributes: [mass_player_type]
-    attributes: [media_album_name, media_artist, media_title, volume_level]
+    attributes: [media_album_name, media_artist, media_title, volume_level, media_position, media_duration,
+                 media_position_updated_at]
     example: tile_example
     options:
       - { id: also_1, kind: entity, domains: [media_player], label: also_1, hint: also_hint }
@@ -55,5 +58,6 @@ tiles:
 
 cards:
   # The album, opened by a tap on the tile: its cover large, its place, title, artist and year, a sentence about it,
-  # what plays now, a key that plays and pauses it, and round keys for its tracks and the volume.
+  # what plays now, a key that plays and pauses it, and round keys for its tracks, the blurb about it, a track back
+  # and on, and the volume.
   - { id: album, name: card_name, pictures: 1 }

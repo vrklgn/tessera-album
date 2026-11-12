@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+- A large tile lying down (about five by three cells and up on a 10-inch screen) is a spread, all in one face: the
+  cover with the album's place, year, title and artist; Previous, Play or Pause and Next, and the volume at the
+  right; a bar with the time gone and the length of the track that plays; the sentence and the blurb about the
+  album; and at the right the tracklist, the track that plays on a band of its own.
+- **Previous** and **Next** keys on the album's card, and on a large tile while it shows the tracks, for when a track
+  does need skipping. A card or a tile too narrow for them keeps the tracks and the volume.
+- The card shows what Apple Music writes about the album: a round key (or a tap on the words about the album) lays
+  the blurb over the card, a page at a time; a tap turns the page, Back takes it away.
+
 ## 0.5.0
 - A large tile starts as a poster: the cover large, the title, the artist, the sentence about the album and a Play
   key. Play turns it to the tracks, with the keys and the bar, for as long as the album is on the player.

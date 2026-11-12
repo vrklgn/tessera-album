@@ -13,7 +13,9 @@
     "pause": "Pause",
     "resume": "Resume",
     "tracks": "1 track | {n} tracks",
-    "minutes": "{n} min"
+    "minutes": "{n} min",
+    "tracklist": "Tracklist",
+    "source": "Apple Music"
   },
   "app": {
     "name": "Album of the day",

@@ -4,7 +4,7 @@ tiles:
   - tile: album
     name: Album of the day
     entity: media_player.living_room
-    sizes: [1x1, 2x1, 3x1, 1x2, 2x2, 3x2, 4x2, 2x3, 3x3, 4x4, 5x5]
+    sizes: [1x1, 2x1, 3x1, 1x2, 2x2, 3x2, 4x2, 2x3, 3x3, 4x4, 5x3, 5x4, 5x5]
   - tile: album
     name: Mixed, no player
     options: { order: mixed, background: none }

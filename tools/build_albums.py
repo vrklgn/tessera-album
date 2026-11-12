@@ -2,7 +2,7 @@
 """Writes components/album_of_the_day/albums.h: the hundred albums the screen picks from.
 
 The list is Apple Music's 100 Best Albums as its site publishes it. The site gives the rank, the title, the artist and
-the cover; the tagline comes from each album's own page there and the year from Apple's public iTunes Lookup. Run it
+the cover; the tagline and the blurb come from each album's own page there and the year from Apple's public iTunes Lookup. Run it
 again when the list or a cover changed, look at the difference, and raise the plugin's version:
 
     python3 tools/build_albums.py
@@ -137,15 +137,19 @@ def main():
         art = album["artwork"]["url"]
         if not art.startswith(ART_HOST) or not art.endswith("/{w}x{h}bb.jpg"):
             raise SystemExit(f"{rank}: a cover from somewhere else, {art}")
-        tagline = ""
+        tagline = blurb = ""
         detail = page(f"{SITE}/album/{rank}/__data.json")
         for section in detail["article"]["sections"]:
             if section.get("sectionName") == "tagline":
                 tagline = plain(section.get("text"))
+            # The page tells of the album in a few paragraphs; the first is the one about the album as a whole, and a
+            # hundred of them are what a small screen's flash has room for.
+            if section.get("sectionName") == "blurb" and not blurb:
+                blurb = plain(section.get("text"))
         time.sleep(0.2)
         row = {"rank": rank, "title": short(album["name"]), "artist": plain(album["artistName"]),
                "year": years.get(album["adamid"], 0), "art": art[len(ART_HOST):-len("/{w}x{h}bb.jpg")],
-               "tagline": tagline, "tracks": "\n".join(tracks_of(detail))}
+               "tagline": tagline, "blurb": blurb, "tracks": "\n".join(tracks_of(detail))}
         rows.append(row)
         print(f'{rank:3} {row["title"]} / {row["artist"]} ({row["year"]}), {row["tracks"].count(chr(10)) + 1} tracks',
               file=sys.stderr)
@@ -164,6 +168,7 @@ def main():
         "  const char *artist;",
         "  const char *art;       // the cover's address between ART_HOST and ART_SIZE",
         "  const char *tagline;   // one sentence about it, \"\" for none",
+        "  const char *blurb;     // a paragraph about it, \"\" for none",
         "  const char *tracks;    // its tracks in the order of the record, a line each (name, tab, seconds), or \"\"",
         "};",
         "",
@@ -177,12 +182,13 @@ def main():
         lines.append(f'    {{{row["rank"]}, {row["year"]}, {quoted(row["title"])}, {quoted(row["artist"])},')
         lines.append(f'     {quoted(row["art"])},')
         lines.append(f'     {quoted(row["tagline"])},')
+        lines.append(f'     {quoted(row["blurb"])},')
         lines.append(f'     {quoted(row["tracks"])}}},')
     lines += ["};", "", "}  // namespace esphome::album_of_the_day", ""]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines), encoding="utf-8")
-    missing = [row["rank"] for row in rows if not row["year"] or not row["tagline"] or not row["tracks"]]
-    print(f"{OUT}: {len(rows)} albums" + (f", year, tagline or tracks missing for {missing}" if missing else ""))
+    missing = [row["rank"] for row in rows if not row["year"] or not row["tagline"] or not row["blurb"] or not row["tracks"]]
+    print(f"{OUT}: {len(rows)} albums" + (f", year, tagline, blurb or tracks missing for {missing}" if missing else ""))
 
 
 if __name__ == "__main__":
